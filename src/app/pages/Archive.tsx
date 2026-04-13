@@ -1,9 +1,9 @@
-import { FolderOpen, Calendar, FileSpreadsheet, Tag, TrendingUp, Search, Filter } from "lucide-react";
+import { FolderOpen, Calendar, FileSpreadsheet, Tag, TrendingUp, Search, Filter, Pencil, Trash2 } from "lucide-react";
 import { motion } from "motion/react";
 import { Link } from "react-router";
 import { useEffect, useState } from "react";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://datalens-alb-363062243.ap-northeast-2.elb.amazonaws.com:8000";
 
 type ArchiveItem = {
   id: number;
@@ -42,6 +42,42 @@ export function Archive() {
     analysis.file_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     analysis.recommended_method.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  const handleDelete = async (id: number) => {
+    if (!confirm("이 분석 리포트를 삭제하시겠습니까?")) return;
+    try {
+      const res = await fetch(`${API_BASE_URL}/reports/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const msg = await res.text();
+        alert(`삭제 실패: ${msg}`);
+        return;
+      }
+      setItems((prev) => prev.filter((x) => x.id !== id));
+    } catch (e) {
+      alert(`삭제 실패: ${e instanceof Error ? e.message : "알 수 없는 오류"}`);
+    }
+  };
+
+  const handleEdit = async (id: number, oldName: string) => {
+    const next = prompt("새 파일명을 입력하세요", oldName);
+    if (!next || next.trim() === oldName) return;
+    try {
+      const res = await fetch(`${API_BASE_URL}/reports/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ file_name: next.trim() }),
+      });
+      if (!res.ok) {
+        const msg = await res.text();
+        alert(`수정 실패: ${msg}`);
+        return;
+      }
+      const updated = (await res.json()) as ArchiveItem;
+      setItems((prev) => prev.map((x) => (x.id === id ? updated : x)));
+    } catch (e) {
+      alert(`수정 실패: ${e instanceof Error ? e.message : "알 수 없는 오류"}`);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -113,7 +149,7 @@ export function Archive() {
                       <FileSpreadsheet size={24} />
                     </div>
                     <span className="px-3 py-1 bg-accent/10 text-accent rounded-full text-xs font-medium">
-                      {analysis.status}
+                      완료
                     </span>
                   </div>
 
@@ -140,6 +176,33 @@ export function Archive() {
                       <TrendingUp size={14} />
                           <span>{analysis.insights.length}개</span>
                     </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 mt-3">
+                    <button
+                      className="px-3 py-2 text-xs bg-secondary rounded-lg hover:bg-secondary/80"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        void handleEdit(analysis.id, analysis.file_name);
+                      }}
+                    >
+                      <span className="inline-flex items-center gap-1">
+                        <Pencil size={12} /> 편집
+                      </span>
+                    </button>
+                    <button
+                      className="px-3 py-2 text-xs bg-destructive text-destructive-foreground rounded-lg hover:bg-destructive/90"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        void handleDelete(analysis.id);
+                      }}
+                    >
+                      <span className="inline-flex items-center gap-1">
+                        <Trash2 size={12} /> 삭제
+                      </span>
+                    </button>
                   </div>
                 </div>
               </Link>

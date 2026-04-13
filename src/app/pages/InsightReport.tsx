@@ -1,27 +1,112 @@
 import { FileDown, Calendar, TrendingUp, BarChart3, CheckCircle2, Info } from "lucide-react";
 import { motion } from "motion/react";
 import { useParams, Link } from "react-router";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ScatterChart, Scatter } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
+import { useEffect, useMemo, useState } from "react";
 
-const mockChartData = [
-  { id: 'a', category: "그룹 A", value: 45, count: 62 },
-  { id: 'b', category: "그룹 B", value: 52, count: 58 },
-  { id: 'c', category: "그룹 C", value: 38, count: 65 },
-  { id: 'd', category: "그룹 D", value: 61, count: 65 },
-];
+type ChartRow = {
+  category: string;
+  value: number;
+  raw_mean?: number;
+};
 
-const mockScatterData = [
-  { id: 1, x: 23, y: 45 },
-  { id: 2, x: 34, y: 52 },
-  { id: 3, x: 28, y: 38 },
-  { id: 4, x: 41, y: 61 },
-  { id: 5, x: 36, y: 55 },
-  { id: 6, x: 29, y: 42 },
-  { id: 7, x: 38, y: 58 },
-];
+type ReportResponse = {
+  id: number;
+  file_name: string;
+  question: string;
+  recommended_method: string;
+  explanation: string;
+  insights: string[];
+  chart_data: ChartRow[];
+  summary: {
+    row_count: number;
+    column_count: number;
+    missing_total: number;
+  };
+  evidence: Record<string, unknown>;
+  created_at: string;
+};
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://datalens-alb-363062243.ap-northeast-2.elb.amazonaws.com:8000";
+
+function methodListFromEvidence(evidence: Record<string, unknown> | undefined, fallback: string): string {
+  if (!evidence) return fallback;
+  const mapping: Record<string, string> = {
+    t_test: "T-검정",
+    correlation: "상관분석",
+    anova: "ANOVA",
+    regression: "회귀분석",
+    chi_square: "교차분석",
+  };
+  const methods = Object.entries(mapping)
+    .filter(([key]) => Boolean((evidence as Record<string, unknown>)[key]))
+    .map(([, label]) => label);
+  return methods.length > 0 ? methods.join(", ") : fallback;
+}
 
 export function InsightReport() {
   const { id } = useParams();
+  const [report, setReport] = useState<ReportResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string>("");
+
+  useEffect(() => {
+    const load = async () => {
+      if (!id) {
+        setError("리포트 ID가 없습니다.");
+        setLoading(false);
+        return;
+      }
+      setLoading(true);
+      setError("");
+      try {
+        const res = await fetch(`${API_BASE_URL}/reports/${id}`);
+        if (!res.ok) {
+          const msg = await res.text();
+          throw new Error(msg || "리포트를 불러오지 못했습니다.");
+        }
+        const data = (await res.json()) as ReportResponse;
+        setReport(data);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "알 수 없는 오류가 발생했습니다.");
+      } finally {
+        setLoading(false);
+      }
+    };
+    void load();
+  }, [id]);
+
+  const createdDate = useMemo(() => {
+    if (!report?.created_at) return "-";
+    return new Date(report.created_at).toLocaleDateString("ko-KR");
+  }, [report?.created_at]);
+
+  const missingRate = useMemo(() => {
+    if (!report?.summary) return "0.0";
+    const denom = Math.max(report.summary.row_count * report.summary.column_count, 1);
+    return ((report.summary.missing_total / denom) * 100).toFixed(1);
+  }, [report?.summary]);
+
+  const methodSummary = useMemo(() => {
+    return methodListFromEvidence(report?.evidence, report?.recommended_method || "기술통계");
+  }, [report?.evidence, report?.recommended_method]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center text-muted-foreground">
+        리포트를 불러오는 중입니다...
+      </div>
+    );
+  }
+
+  if (error || !report) {
+    return (
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-3">
+        <p className="text-destructive">{error || "리포트를 찾을 수 없습니다."}</p>
+        <Link to="/archive" className="text-accent hover:underline">보관함으로 이동</Link>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -51,16 +136,16 @@ export function InsightReport() {
             분석 완료
           </div>
           <h1 className="text-4xl font-bold text-foreground">
-            고객 만족도 설문 통계 분석 리포트
+            {report.file_name} 통계 분석 리포트
           </h1>
           <div className="flex items-center gap-6 text-sm text-muted-foreground">
             <div className="flex items-center gap-2">
               <Calendar size={16} />
-              <span>2026년 4월 1일</span>
+              <span>{createdDate}</span>
             </div>
             <div className="flex items-center gap-2">
               <BarChart3 size={16} />
-              <span>T-검정, 상관분석</span>
+              <span>{methodSummary}</span>
             </div>
           </div>
         </motion.div>
@@ -76,19 +161,19 @@ export function InsightReport() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
             <div>
               <p className="text-sm opacity-80 mb-1">데이터 행 수</p>
-              <p className="text-3xl font-bold">250</p>
+              <p className="text-3xl font-bold">{report.summary?.row_count ?? 0}</p>
             </div>
             <div>
               <p className="text-sm opacity-80 mb-1">변수 개수</p>
-              <p className="text-3xl font-bold">4</p>
+              <p className="text-3xl font-bold">{report.summary?.column_count ?? 0}</p>
             </div>
             <div>
               <p className="text-sm opacity-80 mb-1">결측치</p>
-              <p className="text-3xl font-bold">3.5%</p>
+              <p className="text-3xl font-bold">{missingRate}%</p>
             </div>
             <div>
               <p className="text-sm opacity-80 mb-1">통계 기법</p>
-              <p className="text-3xl font-bold">2개</p>
+              <p className="text-3xl font-bold">{methodSummary.split(",").length}개</p>
             </div>
           </div>
         </motion.div>
@@ -101,15 +186,15 @@ export function InsightReport() {
           className="bg-card rounded-2xl border border-border p-8 space-y-6"
         >
           <div>
-            <h2 className="text-2xl font-bold text-foreground mb-2">1. 그룹별 만족도 비교 분석</h2>
+            <h2 className="text-2xl font-bold text-foreground mb-2">1. 핵심 분석 결과</h2>
             <p className="text-muted-foreground">
-              T-검정(Independent Samples t-test)을 활용하여 그룹 간 만족도 점수의 차이를 분석했습니다.
+              추천 기법은 {report.recommended_method}이며, 업로드된 데이터에서 계산한 요약 통계를 기반으로 결과를 정리했습니다.
             </p>
           </div>
 
           <div className="bg-background rounded-xl p-6">
             <ResponsiveContainer width="100%" height={350}>
-              <BarChart data={mockChartData}>
+              <BarChart data={report.chart_data || []}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
                 <XAxis dataKey="category" stroke="#64748B" />
                 <YAxis stroke="#64748B" />
@@ -121,7 +206,7 @@ export function InsightReport() {
                   }} 
                 />
                 <Legend />
-                <Bar dataKey="value" fill="#14B8A6" name="평균 만족도" radius={[8, 8, 0, 0]} />
+                <Bar dataKey="value" fill="#14B8A6" name="표준화 값(0-100)" radius={[8, 8, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -133,19 +218,17 @@ export function InsightReport() {
                 주요 발견사항
               </h4>
               <p className="text-muted-foreground leading-relaxed">
-                그룹 D의 만족도가 평균 61점으로 가장 높으며, 그룹 C는 38점으로 가장 낮은 수치를 기록했습니다. 
-                통계적으로 유의미한 차이가 확인되었습니다 (t = 3.45, p = 0.001).
+                {report.explanation}
               </p>
             </div>
 
             <div className="p-5 bg-[#8B5CF6]/5 border-l-4 border-[#8B5CF6] rounded-r-lg">
               <h4 className="font-semibold text-foreground mb-2 flex items-center gap-2">
                 <Info size={18} className="text-[#8B5CF6]" />
-                통계적 해석
+                분석 질문
               </h4>
               <p className="text-muted-foreground leading-relaxed">
-                효과 크기(Cohen's d = 0.68)는 중간 수준으로, 그룹 간 차이가 실질적으로 의미 있는 수준임을 나타냅니다. 
-                신뢰구간 95% 기준으로 그룹 D와 그룹 C의 차이는 18~28점 범위에 있습니다.
+                {report.question}
               </p>
             </div>
           </div>
@@ -159,54 +242,28 @@ export function InsightReport() {
           className="bg-card rounded-2xl border border-border p-8 space-y-6"
         >
           <div>
-            <h2 className="text-2xl font-bold text-foreground mb-2">2. 변수 간 상관관계 분석</h2>
+            <h2 className="text-2xl font-bold text-foreground mb-2">2. 인사이트 및 시사점</h2>
             <p className="text-muted-foreground">
-              피어슨 상관계수(Pearson Correlation)를 이용하여 변수 간의 선형 관계를 분석했습니다.
+              아래 항목은 이번 데이터에서 추출된 핵심 인사이트입니다.
             </p>
           </div>
 
-          <div className="bg-background rounded-xl p-6">
-            <ResponsiveContainer width="100%" height={350}>
-              <ScatterChart>
-                <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
-                <XAxis dataKey="x" name="변수 X" stroke="#64748B" />
-                <YAxis dataKey="y" name="변수 Y" stroke="#64748B" />
-                <Tooltip 
-                  cursor={{ strokeDasharray: '3 3' }}
-                  contentStyle={{ 
-                    backgroundColor: 'white', 
-                    border: '1px solid #E2E8F0',
-                    borderRadius: '8px'
-                  }} 
-                />
-                <Legend />
-                <Scatter name="데이터 포인트" data={mockScatterData} fill="#8B5CF6" />
-              </ScatterChart>
-            </ResponsiveContainer>
-          </div>
-
           <div className="space-y-4">
-            <div className="p-5 bg-accent/5 border-l-4 border-accent rounded-r-lg">
-              <h4 className="font-semibold text-foreground mb-2 flex items-center gap-2">
-                <TrendingUp size={18} className="text-accent" />
-                상관계수 해석
-              </h4>
-              <p className="text-muted-foreground leading-relaxed">
-                두 변수 간 양의 상관관계가 발견되었습니다 (r = 0.72, p {'<'} 0.001). 
-                이는 한 변수가 증가할 때 다른 변수도 함께 증가하는 경향이 있음을 의미합니다.
-              </p>
-            </div>
+            {(report.insights || []).map((insight, idx) => (
+              <div key={idx} className="p-5 bg-accent/5 border-l-4 border-accent rounded-r-lg">
+                <h4 className="font-semibold text-foreground mb-2 flex items-center gap-2">
+                  <TrendingUp size={18} className="text-accent" />
+                  핵심 인사이트 {idx + 1}
+                </h4>
+                <p className="text-muted-foreground leading-relaxed">{insight}</p>
+              </div>
+            ))}
 
-            <div className="p-5 bg-[#F59E0B]/5 border-l-4 border-[#F59E0B] rounded-r-lg">
-              <h4 className="font-semibold text-foreground mb-2 flex items-center gap-2">
-                <Info size={18} className="text-[#F59E0B]" />
-                실무적 시사점
-              </h4>
-              <p className="text-muted-foreground leading-relaxed">
-                변수 간의 강한 상관관계는 하나의 지표를 개선하면 다른 지표도 함께 향상될 가능성이 높음을 시사합니다. 
-                다만 상관관계가 인과관계를 의미하지는 않으므로, 추가적인 실험적 검증이 필요합니다.
-              </p>
-            </div>
+            {(report.insights || []).length === 0 && (
+              <div className="p-5 bg-secondary rounded-r-lg">
+                <p className="text-muted-foreground">저장된 인사이트가 없습니다.</p>
+              </div>
+            )}
           </div>
         </motion.div>
 
@@ -220,15 +277,13 @@ export function InsightReport() {
           <h2 className="text-2xl font-bold text-foreground">결론 및 권장사항</h2>
           <div className="space-y-3 text-muted-foreground leading-relaxed">
             <p>
-              본 분석을 통해 그룹 간 만족도에 유의미한 차이가 있음을 확인했으며, 
-              특히 그룹 D의 만족도가 다른 그룹에 비해 현저히 높은 것으로 나타났습니다.
+              본 분석의 주요 결론은 {report.explanation}
             </p>
             <p>
-              또한 주요 변수 간에 강한 양의 상관관계가 발견되어, 통합적인 개선 전략 수립이 가능할 것으로 판단됩니다.
+              권장되는 우선 분석 기법은 {report.recommended_method}이며, 필요 시 보관함에서 동일 리포트 기준으로 후속 질문을 진행할 수 있습니다.
             </p>
             <p>
-              향후 그룹 D의 성공 요인을 심층 분석하여 다른 그룹에 적용하는 전략을 권장드리며, 
-              추가적인 질적 연구(인터뷰, 포커스 그룹)를 통한 검증도 필요합니다.
+              다음 단계로는 영향력이 큰 변수 중심의 추가 분석과 데이터 수집 범위 확장을 권장합니다.
             </p>
           </div>
         </motion.div>
@@ -241,7 +296,7 @@ export function InsightReport() {
           className="text-center text-sm text-muted-foreground pt-8 border-t border-border"
         >
           <p>본 리포트는 Data Lens AI가 자동으로 생성했습니다.</p>
-          <p className="mt-1">보고서 ID: {id} | 생성일: 2026.04.01</p>
+          <p className="mt-1">보고서 ID: {report.id} | 생성일: {createdDate}</p>
         </motion.div>
       </div>
     </div>

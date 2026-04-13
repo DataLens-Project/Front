@@ -3,7 +3,7 @@ import { motion } from "motion/react";
 import { Link } from "react-router";
 import { useEffect, useMemo, useState } from "react";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://datalens-alb-363062243.ap-northeast-2.elb.amazonaws.com:8000";
 
 type ReportItem = {
   id: number;

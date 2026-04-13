@@ -33,14 +33,21 @@ type AnalyzeResponse = {
   chart_data: ChartRow[];
   table_data: TableRow[];
   evidence?: Record<string, unknown>;
+  method_options?: Array<{
+    method: string;
+    when_to_use: string;
+    current_fit: string;
+  }>;
+  next_question?: string;
   summary?: {
     row_count: number;
     column_count: number;
     missing_total: number;
   };
+  report_id?: number;
 };
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://datalens-alb-363062243.ap-northeast-2.elb.amazonaws.com:8000";
 
 export function AnalysisLab() {
   const [messages, setMessages] = useState<Message[]>([
@@ -60,6 +67,9 @@ export function AnalysisLab() {
   const [summary, setSummary] = useState<AnalyzeResponse['summary']>();
   const [recommendedMethod, setRecommendedMethod] = useState("-");
   const [explanation, setExplanation] = useState("");
+  const [methodOptions, setMethodOptions] = useState<NonNullable<AnalyzeResponse['method_options']>>([]);
+  const [nextQuestion, setNextQuestion] = useState("");
+  const [currentReportId, setCurrentReportId] = useState<number | null>(null);
   const [progress, setProgress] = useState(0);
   const [evidence, setEvidence] = useState<Record<string, unknown> | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -131,6 +141,9 @@ export function AnalysisLab() {
       setEvidence(data.evidence || null);
       setRecommendedMethod(data.recommended_method || "-");
       setExplanation(data.explanation || "");
+      setMethodOptions(data.method_options || []);
+      setNextQuestion(data.next_question || "");
+      setCurrentReportId(data.report_id ?? null);
 
       setMessages((prev) => [
         ...prev,
@@ -182,12 +195,32 @@ export function AnalysisLab() {
     setMessages(prev => [...prev, { role: 'user', content: question }]);
     setInput("");
 
-    if (!selectedFile) {
+    if (!selectedFile || !currentReportId) {
       setMessages((prev) => [...prev, { role: 'ai', content: '파일 업로드 후 질문해 주세요.' }]);
       return;
     }
 
-    await runAnalyze(selectedFile, question);
+    setIsLoading(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/assistant/ask`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ report_id: currentReportId, question }),
+      });
+      if (!res.ok) {
+        const msg = await res.text();
+        throw new Error(msg || "어시스턴트 응답 실패");
+      }
+      const data = (await res.json()) as { answer: string };
+      setMessages((prev) => [...prev, { role: 'ai', content: data.answer || '답변을 생성하지 못했습니다.' }]);
+    } catch (error) {
+      setMessages((prev) => [
+        ...prev,
+        { role: 'ai', content: `질문 처리 중 오류가 발생했습니다.\n${error instanceof Error ? error.message : '알 수 없는 오류'}` },
+      ]);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const evidenceCount = Object.values(evidence || {}).filter((v) => v).length;
@@ -459,7 +492,7 @@ export function AnalysisLab() {
               className="space-y-6"
             >
               <div className="bg-card rounded-xl border border-border p-8">
-                <h2 className="text-3xl font-bold text-foreground">고객 만족도 설문 통계 분석 리포트</h2>
+                <h2 className="text-3xl font-bold text-foreground">{selectedFile ? `${selectedFile.name} 통계 분석 리포트` : "통계 분석 리포트"}</h2>
                 <p className="text-muted-foreground mt-2">{today} · {recommendedMethod}</p>
               </div>
 
@@ -557,6 +590,35 @@ export function AnalysisLab() {
                     </div>
                   )}
                 </div>
+              </div>
+
+              <div className="bg-card rounded-xl border border-border p-6 space-y-4">
+                <h3 className="text-2xl font-bold text-foreground">3. 추가로 가능한 분석</h3>
+                <p className="text-muted-foreground">
+                  주 분석 외에도 아래 대안 분석을 수행할 수 있습니다. 목적에 맞는 분석을 선택해 질문으로 요청해 주세요.
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {methodOptions.map((opt, idx) => (
+                    <div key={idx} className="p-4 bg-secondary rounded-lg border border-border">
+                      <h4 className="font-semibold text-foreground">{opt.method}</h4>
+                      <p className="text-sm text-muted-foreground mt-2">사용 시점: {opt.when_to_use}</p>
+                      <p className="text-sm text-muted-foreground mt-1">현재 데이터 적합도: {opt.current_fit}</p>
+                      <button
+                        className="mt-3 px-3 py-2 text-sm bg-accent text-accent-foreground rounded-lg hover:bg-accent/90"
+                        onClick={() => {
+                          setInput(`${opt.method}으로 추가 분석해줘`);
+                        }}
+                      >
+                        이 분석 요청하기
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                {nextQuestion && (
+                  <div className="p-4 bg-accent/10 border-l-4 border-accent rounded-r-lg text-sm text-muted-foreground">
+                    {nextQuestion}
+                  </div>
+                )}
               </div>
 
               <div className="bg-card rounded-xl border border-border p-6 space-y-3">
