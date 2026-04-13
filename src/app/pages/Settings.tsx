@@ -1,14 +1,9 @@
-import { Settings as SettingsIcon, Bell, Database, Palette, Trash2, Sun, Moon } from "lucide-react";
+import { Settings as SettingsIcon, Database, Palette, Trash2, Sun, Moon } from "lucide-react";
 import { motion } from "motion/react";
-import { useState } from "react";
 import { useTheme } from "../context/ThemeContext";
 
 export function Settings() {
   const { theme, setTheme } = useTheme();
-  const [notifications, setNotifications] = useState({
-    analysis: true,
-    updates: false,
-  });
 
   const handleClearData = () => {
     if (confirm("모든 분석 데이터를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.")) {
@@ -80,61 +75,11 @@ export function Settings() {
           </div>
         </motion.div>
 
-        {/* Notification Settings */}
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="bg-card border border-border rounded-xl p-8"
-        >
-          <div className="flex items-center gap-3 mb-6">
-            <Bell size={24} className="text-accent" />
-            <div>
-              <h2 className="text-2xl font-bold text-foreground">알림 설정</h2>
-              <p className="text-muted-foreground">받고 싶은 알림을 선택합니다</p>
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            <div className="flex items-center justify-between p-4 border border-border rounded-lg">
-              <div>
-                <h3 className="font-medium text-foreground">분석 ���료 알림</h3>
-                <p className="text-sm text-muted-foreground">데이터 분석이 완료되면 브라우저 알림을 받습니다</p>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={notifications.analysis}
-                  onChange={(e) => setNotifications({ ...notifications, analysis: e.target.checked })}
-                  className="sr-only peer"
-                />
-                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-accent/30 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-accent"></div>
-              </label>
-            </div>
-
-            <div className="flex items-center justify-between p-4 border border-border rounded-lg">
-              <div>
-                <h3 className="font-medium text-foreground">제품 업데이트</h3>
-                <p className="text-sm text-muted-foreground">새로운 기능 및 개선사항 알림</p>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={notifications.updates}
-                  onChange={(e) => setNotifications({ ...notifications, updates: e.target.checked })}
-                  className="sr-only peer"
-                />
-                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-accent/30 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-accent"></div>
-              </label>
-            </div>
-          </div>
-        </motion.div>
-
         {/* Data Management */}
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
+          transition={{ delay: 0.1 }}
           className="bg-card border border-border rounded-xl p-8"
         >
           <div className="flex items-center gap-3 mb-6">
@@ -186,7 +131,7 @@ export function Settings() {
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
+          transition={{ delay: 0.2 }}
           className="bg-gradient-to-r from-primary to-accent/80 rounded-xl p-8 text-primary-foreground"
         >
           <h3 className="text-2xl font-bold mb-2">Data Lens v1.0</h3>

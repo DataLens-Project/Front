@@ -1,68 +1,46 @@
 import { FolderOpen, Calendar, FileSpreadsheet, Tag, TrendingUp, Search, Filter } from "lucide-react";
 import { motion } from "motion/react";
 import { Link } from "react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
-const mockArchivedAnalyses = [
-  {
-    id: "1",
-    fileName: "고객_만족도_설문_2024.xlsx",
-    tags: ["T-검정", "상관분석"],
-    date: "2026.04.01",
-    insights: 3,
-    status: "완료",
-  },
-  {
-    id: "2",
-    fileName: "매출_데이터_Q1.csv",
-    tags: ["회귀분석", "시계열"],
-    date: "2026.03.28",
-    insights: 5,
-    status: "완료",
-  },
-  {
-    id: "3",
-    fileName: "제품_AB_테스트_결과.xlsx",
-    tags: ["ANOVA", "카이제곱"],
-    date: "2026.03.25",
-    insights: 4,
-    status: "완료",
-  },
-  {
-    id: "4",
-    fileName: "직원_근속년수_분석.csv",
-    tags: ["기술통계", "분산분석"],
-    date: "2026.03.20",
-    insights: 2,
-    status: "완료",
-  },
-  {
-    id: "5",
-    fileName: "설문조사_결과_2024_Q4.xlsx",
-    tags: ["기술통계", "T-검정"],
-    date: "2026.03.15",
-    insights: 3,
-    status: "완료",
-  },
-  {
-    id: "6",
-    fileName: "마케팅_캠페인_성과.csv",
-    tags: ["회귀분석", "상관분석"],
-    date: "2026.03.10",
-    insights: 6,
-    status: "완료",
-  },
-];
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+
+type ArchiveItem = {
+  id: number;
+  file_name: string;
+  recommended_method: string;
+  insights: string[];
+  created_at: string;
+};
+
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("ko-KR");
+}
 
 export function Archive() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedFilter, setSelectedFilter] = useState<string>("전체");
+  const [items, setItems] = useState<ArchiveItem[]>([]);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/reports?limit=200`);
+        if (!res.ok) return;
+        const data = (await res.json()) as { items: ArchiveItem[] };
+        setItems(data.items || []);
+      } catch {
+        // 연결 실패 시 빈 목록 유지
+      }
+    };
+    void load();
+  }, []);
 
   const filters = ["전체", "이번 주", "이번 달", "3개월", "6개월"];
 
-  const filteredAnalyses = mockArchivedAnalyses.filter(analysis =>
-    analysis.fileName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    analysis.tags.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase()))
+  const filteredAnalyses = items.filter(analysis =>
+    analysis.file_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    analysis.recommended_method.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   return (
@@ -79,7 +57,7 @@ export function Archive() {
               <div>
                 <h1 className="text-3xl font-bold text-foreground">분석 보관함</h1>
                 <p className="text-muted-foreground mt-1">
-                  총 <span className="font-semibold text-accent">{mockArchivedAnalyses.length}개</span>의 분석 이력이 브라우저에 저장되어 있습니다.
+                  총 <span className="font-semibold text-accent">{items.length}개</span>의 분석 리포트가 저장되어 있습니다.
                 </p>
               </div>
             </div>
@@ -140,32 +118,27 @@ export function Archive() {
                   </div>
 
                   {/* File Name */}
-                  <h3 className="font-semibold text-foreground truncate group-hover:text-accent transition-colors mb-3">
-                    {analysis.fileName}
+                      <h3 className="font-semibold text-foreground truncate group-hover:text-accent transition-colors mb-3">
+                        {analysis.file_name}
                   </h3>
 
                   {/* Tags */}
                   <div className="flex flex-wrap gap-2 mb-4">
-                    {analysis.tags.map((tag) => (
-                      <span
-                        key={tag}
-                        className="px-2 py-1 bg-secondary text-secondary-foreground rounded text-xs flex items-center gap-1"
-                      >
-                        <Tag size={10} />
-                        {tag}
-                      </span>
-                    ))}
+                        <span className="px-2 py-1 bg-secondary text-secondary-foreground rounded text-xs flex items-center gap-1">
+                          <Tag size={10} />
+                          {analysis.recommended_method}
+                        </span>
                   </div>
 
                   {/* Footer Info */}
                   <div className="flex items-center justify-between text-sm text-muted-foreground pt-4 border-t border-border">
                     <div className="flex items-center gap-2">
                       <Calendar size={14} />
-                      <span>{analysis.date}</span>
+                          <span>{formatDate(analysis.created_at)}</span>
                     </div>
                     <div className="flex items-center gap-1 text-accent">
                       <TrendingUp size={14} />
-                      <span>{analysis.insights}개</span>
+                          <span>{analysis.insights.length}개</span>
                     </div>
                   </div>
                 </div>

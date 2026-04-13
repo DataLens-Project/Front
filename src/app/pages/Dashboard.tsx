@@ -1,45 +1,69 @@
 import { TrendingUp, Database, Zap, Calendar, FileSpreadsheet, Tag } from "lucide-react";
 import { motion } from "motion/react";
 import { Link } from "react-router";
+import { useEffect, useMemo, useState } from "react";
 
-const mockAnalyses = [
-  {
-    id: "1",
-    fileName: "고객_만족도_설문_2024.xlsx",
-    tags: ["T-검정", "상관분석"],
-    date: "2026.04.01",
-    insights: 3,
-  },
-  {
-    id: "2",
-    fileName: "매출_데이터_Q1.csv",
-    tags: ["회귀분석", "시계열"],
-    date: "2026.03.28",
-    insights: 5,
-  },
-  {
-    id: "3",
-    fileName: "제품_AB_테스트_결과.xlsx",
-    tags: ["ANOVA", "카이제곱"],
-    date: "2026.03.25",
-    insights: 4,
-  },
-  {
-    id: "4",
-    fileName: "직원_근속년수_분석.csv",
-    tags: ["기술통계", "분산분석"],
-    date: "2026.03.20",
-    insights: 2,
-  },
-];
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 
-const weeklyStats = [
-  { label: "분석한 데이터셋", value: "5", icon: Database, color: "text-[#14B8A6]" },
-  { label: "도출된 인사이트", value: "14", icon: Zap, color: "text-[#8B5CF6]" },
-  { label: "생성된 리포트", value: "3", icon: FileSpreadsheet, color: "text-[#F59E0B]" },
-];
+type ReportItem = {
+  id: number;
+  file_name: string;
+  recommended_method: string;
+  insights: string[];
+  created_at: string;
+};
+
+type StatsResponse = {
+  total_reports: number;
+  total_insights: number;
+  generated_reports: number;
+};
+
+function formatDate(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleDateString("ko-KR");
+}
 
 export function Dashboard() {
+  const [stats, setStats] = useState<StatsResponse>({
+    total_reports: 0,
+    total_insights: 0,
+    generated_reports: 0,
+  });
+  const [recentReports, setRecentReports] = useState<ReportItem[]>([]);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const [statsRes, reportRes] = await Promise.all([
+          fetch(`${API_BASE_URL}/reports/stats`),
+          fetch(`${API_BASE_URL}/reports?limit=4`),
+        ]);
+
+        if (statsRes.ok) {
+          const s = (await statsRes.json()) as StatsResponse;
+          setStats(s);
+        }
+        if (reportRes.ok) {
+          const r = (await reportRes.json()) as { items: ReportItem[] };
+          setRecentReports(r.items || []);
+        }
+      } catch {
+        // 네트워크 오류 시 기본값 유지
+      }
+    };
+    void load();
+  }, []);
+
+  const weeklyStats = useMemo(
+    () => [
+      { label: "분석한 데이터셋", value: String(stats.total_reports), icon: Database, color: "text-[#14B8A6]" },
+      { label: "도출된 인사이트", value: String(stats.total_insights), icon: Zap, color: "text-[#8B5CF6]" },
+      { label: "생성된 리포트", value: String(stats.generated_reports), icon: FileSpreadsheet, color: "text-[#F59E0B]" },
+    ],
+    [stats]
+  );
+
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
@@ -51,7 +75,7 @@ export function Dashboard() {
           >
             <h1 className="text-3xl font-bold text-foreground mb-2">Data Lens에 오신 것을 환영합니다 👋</h1>
             <p className="text-muted-foreground">
-              이번 주 <span className="font-semibold text-accent">5개의 데이터셋</span>에서 인사이트를 도출했습니다.
+              현재까지 <span className="font-semibold text-accent">{stats.total_reports}개의 데이터셋</span>을 분석했습니다.
             </p>
           </motion.div>
         </div>
@@ -97,7 +121,7 @@ export function Dashboard() {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {mockAnalyses.map((analysis, idx) => (
+            {recentReports.map((analysis, idx) => (
               <motion.div
                 key={analysis.id}
                 initial={{ opacity: 0, y: 20 }}
@@ -114,11 +138,11 @@ export function Dashboard() {
                         </div>
                         <div className="flex-1 min-w-0">
                           <h3 className="font-semibold text-foreground truncate group-hover:text-accent transition-colors">
-                            {analysis.fileName}
+                            {analysis.file_name}
                           </h3>
                           <div className="flex items-center gap-2 text-sm text-muted-foreground mt-1">
                             <Calendar size={14} />
-                            <span>{analysis.date}</span>
+                            <span>{formatDate(analysis.created_at)}</span>
                           </div>
                         </div>
                       </div>
@@ -126,26 +150,24 @@ export function Dashboard() {
 
                     {/* Tags */}
                     <div className="flex flex-wrap gap-2 mb-4">
-                      {analysis.tags.map((tag) => (
-                        <span
-                          key={tag}
-                          className="px-3 py-1 bg-accent/10 text-accent rounded-full text-sm flex items-center gap-1"
-                        >
-                          <Tag size={12} />
-                          {tag}
-                        </span>
-                      ))}
+                      <span className="px-3 py-1 bg-accent/10 text-accent rounded-full text-sm flex items-center gap-1">
+                        <Tag size={12} />
+                        {analysis.recommended_method}
+                      </span>
                     </div>
 
                     {/* Insights Count */}
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
                       <TrendingUp size={16} className="text-accent" />
-                      <span>{analysis.insights}개의 인사이트 도출</span>
+                      <span>{analysis.insights.length}개의 인사이트 도출</span>
                     </div>
                   </div>
                 </Link>
               </motion.div>
             ))}
+            {recentReports.length === 0 && (
+              <div className="text-muted-foreground">아직 저장된 분석 리포트가 없습니다.</div>
+            )}
           </div>
         </motion.div>
 
