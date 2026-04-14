@@ -1,7 +1,7 @@
 import { FileDown, Calendar, TrendingUp, BarChart3, CheckCircle2, Info } from "lucide-react";
 import { motion } from "motion/react";
 import { useParams, Link } from "react-router";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from "recharts";
 import { useEffect, useMemo, useState } from "react";
 
 type ChartRow = {
@@ -18,6 +18,13 @@ type ReportResponse = {
   explanation: string;
   insights: string[];
   chart_data: ChartRow[];
+  table_data: Array<{
+    name: string;
+    dtype: string;
+    missing: number;
+    unique?: number;
+    mean?: number;
+  }>;
   summary: {
     row_count: number;
     column_count: number;
@@ -90,6 +97,31 @@ export function InsightReport() {
   const methodSummary = useMemo(() => {
     return methodListFromEvidence(report?.evidence, report?.recommended_method || "기술통계");
   }, [report?.evidence, report?.recommended_method]);
+
+  const rawMeanData = useMemo(
+    () => (report?.chart_data || []).filter((d) => typeof d.raw_mean === "number").map((d) => ({ category: d.category, value: d.raw_mean as number })),
+    [report?.chart_data]
+  );
+
+  const missingByColumn = useMemo(
+    () => (report?.table_data || []).filter((r) => r.missing > 0).sort((a, b) => b.missing - a.missing).slice(0, 12).map((r) => ({ name: r.name, missing: r.missing })),
+    [report?.table_data]
+  );
+
+  const dtypeDistribution = useMemo(() => {
+    const counter = new Map<string, number>();
+    for (const row of report?.table_data || []) {
+      const key = row.dtype.includes("int") || row.dtype.includes("float")
+        ? "수치형"
+        : row.dtype.includes("datetime")
+          ? "날짜형"
+          : "범주형/문자형";
+      counter.set(key, (counter.get(key) || 0) + 1);
+    }
+    return Array.from(counter.entries()).map(([name, value]) => ({ name, value }));
+  }, [report?.table_data]);
+
+  const PIE_COLORS = ["#14B8A6", "#6366F1", "#F59E0B", "#EC4899", "#10B981"];
 
   if (loading) {
     return (
@@ -268,6 +300,123 @@ export function InsightReport() {
         </motion.div>
 
         {/* Conclusion */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.35 }}
+          className="bg-card rounded-2xl border border-border p-8 space-y-6"
+        >
+          <div>
+            <h2 className="text-2xl font-bold text-foreground mb-2">3. 데이터 테이블</h2>
+            <p className="text-muted-foreground">보관함에서 다시 확인할 때도 변수별 타입, 결측치, 기초 통계를 바로 볼 수 있습니다.</p>
+          </div>
+
+          <div className="overflow-x-auto rounded-xl border border-border">
+            <table className="w-full text-sm">
+              <thead className="bg-secondary">
+                <tr>
+                  <th className="px-4 py-3 text-left text-foreground">변수명</th>
+                  <th className="px-4 py-3 text-left text-foreground">타입</th>
+                  <th className="px-4 py-3 text-left text-foreground">결측치</th>
+                  <th className="px-4 py-3 text-left text-foreground">기초 통계</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(report.table_data || []).map((row, idx) => (
+                  <tr key={`${row.name}-${idx}`} className="border-t border-border">
+                    <td className="px-4 py-3 text-foreground">{row.name}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{row.dtype}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{row.missing}</td>
+                    <td className="px-4 py-3 text-muted-foreground">
+                      {typeof row.mean === "number" ? `평균 ${row.mean}` : `고유값 ${row.unique ?? 0}개`}
+                    </td>
+                  </tr>
+                ))}
+                {(report.table_data || []).length === 0 && (
+                  <tr>
+                    <td className="px-4 py-8 text-muted-foreground" colSpan={4}>저장된 테이블 데이터가 없습니다.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.38 }}
+          className="bg-card rounded-2xl border border-border p-8 space-y-6"
+        >
+          <div>
+            <h2 className="text-2xl font-bold text-foreground mb-2">4. 추가 시각화</h2>
+            <p className="text-muted-foreground">결측치 집중 변수, 타입 분포, 원본 평균 추세를 함께 확인하면 데이터 상태를 더 빠르게 이해할 수 있습니다.</p>
+          </div>
+
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+            <div className="bg-background rounded-xl p-5">
+              <h3 className="text-lg font-semibold text-foreground mb-3">결측치 상위 변수</h3>
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={missingByColumn} layout="vertical" margin={{ left: 20, right: 20 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
+                  <XAxis type="number" stroke="#64748B" />
+                  <YAxis dataKey="name" type="category" width={120} stroke="#64748B" />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: 'white',
+                      border: '1px solid #E2E8F0',
+                      borderRadius: '8px'
+                    }}
+                  />
+                  <Legend />
+                  <Bar dataKey="missing" fill="#EF4444" name="결측치 수" radius={[0, 8, 8, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+
+            <div className="bg-background rounded-xl p-5">
+              <h3 className="text-lg font-semibold text-foreground mb-3">데이터 타입 분포</h3>
+              <ResponsiveContainer width="100%" height={280}>
+                <PieChart>
+                  <Pie data={dtypeDistribution} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} label>
+                    {dtypeDistribution.map((_, idx) => (
+                      <Cell key={`cell-${idx}`} fill={PIE_COLORS[idx % PIE_COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: 'white',
+                      border: '1px solid #E2E8F0',
+                      borderRadius: '8px'
+                    }}
+                  />
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          <div className="bg-background rounded-xl p-5">
+            <h3 className="text-lg font-semibold text-foreground mb-3">원본 평균 추세</h3>
+            <ResponsiveContainer width="100%" height={280}>
+              <LineChart data={rawMeanData.length > 0 ? rawMeanData : report.chart_data}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
+                <XAxis dataKey="category" stroke="#64748B" />
+                <YAxis stroke="#64748B" />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: 'white',
+                    border: '1px solid #E2E8F0',
+                    borderRadius: '8px'
+                  }}
+                />
+                <Legend />
+                <Line type="monotone" dataKey="value" stroke="#14B8A6" strokeWidth={3} name={rawMeanData.length > 0 ? "원본 평균값" : "표준화 값"} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </motion.div>
+
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}

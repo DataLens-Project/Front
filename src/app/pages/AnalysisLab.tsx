@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Upload, Send, Table2, BarChart3, FileText, Sparkles } from "lucide-react";
 import { motion } from "motion/react";
 import { LoadingAnimation } from "../components/LoadingAnimation";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell, AreaChart, Area } from "recharts";
 
 type Message = {
   role: 'user' | 'ai';
@@ -226,6 +226,32 @@ export function AnalysisLab() {
   const evidenceCount = Object.values(evidence || {}).filter((v) => v).length;
   const analysisTechniqueCount = evidenceCount > 0 ? evidenceCount : (recommendedMethod !== "-" ? 1 : 0);
   const today = new Date().toLocaleDateString("ko-KR");
+  const rawMeanData = useMemo(
+    () => chartData.filter((d) => typeof d.raw_mean === "number").map((d) => ({ category: d.category, value: d.raw_mean as number })),
+    [chartData]
+  );
+  const missingByColumn = useMemo(
+    () => tableData.filter((r) => r.missing > 0).sort((a, b) => b.missing - a.missing).slice(0, 12).map((r) => ({ name: r.name, missing: r.missing })),
+    [tableData]
+  );
+  const dtypeDistribution = useMemo(() => {
+    const counter = new Map<string, number>();
+    for (const row of tableData) {
+      const key = row.dtype.includes("int") || row.dtype.includes("float")
+        ? "수치형"
+        : row.dtype.includes("datetime")
+          ? "날짜형"
+          : "범주형/문자형";
+      counter.set(key, (counter.get(key) || 0) + 1);
+    }
+    return Array.from(counter.entries()).map(([name, value]) => ({ name, value }));
+  }, [tableData]);
+  const completeness = useMemo(() => {
+    if (!summary) return 0;
+    const total = Math.max(summary.row_count * summary.column_count, 1);
+    return Number(((1 - summary.missing_total / total) * 100).toFixed(1));
+  }, [summary]);
+  const PIE_COLORS = ["#14B8A6", "#6366F1", "#F59E0B", "#EC4899", "#10B981"];
 
   return (
     <div className="h-screen flex">
@@ -481,6 +507,101 @@ export function AnalysisLab() {
                     <Line type="monotone" dataKey="std" stroke="#F59E0B" strokeWidth={2} name="보조지표" />
                   </LineChart>
                 </ResponsiveContainer>
+              </div>
+
+              <div className="bg-card rounded-xl border border-border p-6">
+                <h3 className="text-xl font-bold text-foreground mb-2">실제 평균값 비교</h3>
+                <p className="text-sm text-muted-foreground mb-4">표준화 값이 아닌 원본 평균(raw mean) 기준으로 주요 수치형 변수의 크기를 비교합니다.</p>
+                <ResponsiveContainer width="100%" height={320}>
+                  <AreaChart data={rawMeanData.length > 0 ? rawMeanData : chartData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
+                    <XAxis dataKey="category" stroke="#64748B" />
+                    <YAxis stroke="#64748B" />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: 'white',
+                        border: '1px solid #E2E8F0',
+                        borderRadius: '8px'
+                      }}
+                    />
+                    <Legend />
+                    <Area type="monotone" dataKey="value" stroke="#14B8A6" fill="#14B8A633" name={rawMeanData.length > 0 ? "원본 평균값" : "표준화 값"} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                <div className="bg-card rounded-xl border border-border p-6">
+                  <h3 className="text-xl font-bold text-foreground mb-2">변수별 결측치 상위</h3>
+                  <p className="text-sm text-muted-foreground mb-4">결측치가 많은 변수부터 정렬해 데이터 정제 우선순위를 보여줍니다.</p>
+                  <ResponsiveContainer width="100%" height={300}>
+                    <BarChart data={missingByColumn} layout="vertical" margin={{ left: 20, right: 20 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
+                      <XAxis type="number" stroke="#64748B" />
+                      <YAxis dataKey="name" type="category" width={120} stroke="#64748B" />
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: 'white',
+                          border: '1px solid #E2E8F0',
+                          borderRadius: '8px'
+                        }}
+                      />
+                      <Legend />
+                      <Bar dataKey="missing" fill="#EF4444" name="결측치 수" radius={[0, 8, 8, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                  {missingByColumn.length === 0 && (
+                    <p className="text-sm text-muted-foreground mt-3">결측치가 있는 변수가 없습니다.</p>
+                  )}
+                </div>
+
+                <div className="bg-card rounded-xl border border-border p-6">
+                  <h3 className="text-xl font-bold text-foreground mb-2">데이터 타입 분포</h3>
+                  <p className="text-sm text-muted-foreground mb-4">수치형/범주형/날짜형 변수 구성을 통해 가능한 분석 범위를 한눈에 확인합니다.</p>
+                  <ResponsiveContainer width="100%" height={300}>
+                    <PieChart>
+                      <Pie
+                        data={dtypeDistribution}
+                        dataKey="value"
+                        nameKey="name"
+                        cx="50%"
+                        cy="50%"
+                        outerRadius={105}
+                        label
+                      >
+                        {dtypeDistribution.map((_, idx) => (
+                          <Cell key={`cell-${idx}`} fill={PIE_COLORS[idx % PIE_COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: 'white',
+                          border: '1px solid #E2E8F0',
+                          borderRadius: '8px'
+                        }}
+                      />
+                      <Legend />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  {dtypeDistribution.length === 0 && (
+                    <p className="text-sm text-muted-foreground mt-3">변수 정보를 불러오면 타입 분포가 표시됩니다.</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-card rounded-xl border border-border p-5">
+                  <p className="text-sm text-muted-foreground">데이터 완전성</p>
+                  <p className="text-3xl font-bold text-foreground mt-2">{completeness}%</p>
+                </div>
+                <div className="bg-card rounded-xl border border-border p-5">
+                  <p className="text-sm text-muted-foreground">결측치 총합</p>
+                  <p className="text-3xl font-bold text-foreground mt-2">{summary?.missing_total ?? 0}</p>
+                </div>
+                <div className="bg-card rounded-xl border border-border p-5">
+                  <p className="text-sm text-muted-foreground">분석 변수 수</p>
+                  <p className="text-3xl font-bold text-foreground mt-2">{tableData.length}</p>
+                </div>
               </div>
             </motion.div>
           )}
