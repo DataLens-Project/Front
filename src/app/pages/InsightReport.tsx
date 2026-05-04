@@ -10,6 +10,17 @@ type ChartRow = {
   raw_mean?: number;
 };
 
+type ChartMeta = {
+  mode?: string;
+  primary_chart?: "bar" | "line";
+  secondary_chart?: "bar" | "line";
+  title?: string;
+  secondary_title?: string;
+  description?: string;
+  value_key?: "value" | "raw_mean";
+  secondary_value_key?: "value" | "raw_mean";
+};
+
 type ReportResponse = {
   id: number;
   file_name: string;
@@ -18,6 +29,8 @@ type ReportResponse = {
   explanation: string;
   insights: string[];
   chart_data: ChartRow[];
+  secondary_chart_data?: ChartRow[];
+  chart_meta?: ChartMeta;
   table_data: Array<{
     name: string;
     dtype: string;
@@ -35,6 +48,7 @@ type ReportResponse = {
 };
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://datalens-alb-363062243.ap-northeast-2.elb.amazonaws.com:8000";
+const LAST_REPORT_ID_KEY = "datalens_last_report_id";
 
 function methodListFromEvidence(evidence: Record<string, unknown> | undefined, fallback: string): string {
   if (!evidence) return fallback;
@@ -56,6 +70,7 @@ export function InsightReport() {
   const [report, setReport] = useState<ReportResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -74,6 +89,7 @@ export function InsightReport() {
         }
         const data = (await res.json()) as ReportResponse;
         setReport(data);
+        window.localStorage.setItem(LAST_REPORT_ID_KEY, String(data.id));
       } catch (e) {
         setError(e instanceof Error ? e.message : "알 수 없는 오류가 발생했습니다.");
       } finally {
@@ -102,6 +118,25 @@ export function InsightReport() {
     () => (report?.chart_data || []).filter((d) => typeof d.raw_mean === "number").map((d) => ({ category: d.category, value: d.raw_mean as number })),
     [report?.chart_data]
   );
+  const chartMeta = useMemo(() => {
+    if (report?.chart_meta && Object.keys(report.chart_meta).length > 0) return report.chart_meta;
+    const fromEvidence = (report?.evidence || {}).visualization as ChartMeta | undefined;
+    return fromEvidence || null;
+  }, [report?.chart_meta, report?.evidence]);
+  const secondaryChartData = useMemo(() => {
+    if (report?.secondary_chart_data && report.secondary_chart_data.length > 0) return report.secondary_chart_data;
+    const fromEvidence = (report?.evidence || {}).secondary_chart_data as ChartRow[] | undefined;
+    return fromEvidence || [];
+  }, [report?.secondary_chart_data, report?.evidence]);
+  const primaryDataKey = chartMeta?.value_key || (rawMeanData.length > 0 ? "raw_mean" : "value");
+  const secondaryDataKey: "value" | "raw_mean" =
+    chartMeta?.secondary_value_key === "raw_mean" ? "raw_mean" : "value";
+  const secondarySeriesName =
+    chartMeta?.mode === "group_compare" ? "표본 수" : chartMeta?.mode === "categorical_association" ? "비율(%)" : "값";
+  const primaryLegend = chartMeta?.mode === "regression_importance"
+    ? "영향도(%)"
+    : (primaryDataKey === "raw_mean" ? "원본 평균값" : "표준화 값(0-100)");
+  const secondaryPlotData = secondaryChartData.length > 0 ? secondaryChartData : (rawMeanData.length > 0 ? rawMeanData : report?.chart_data || []);
 
   const missingByColumn = useMemo(
     () => (report?.table_data || []).filter((r) => r.missing > 0).sort((a, b) => b.missing - a.missing).slice(0, 12).map((r) => ({ name: r.name, missing: r.missing })),
@@ -122,6 +157,33 @@ export function InsightReport() {
   }, [report?.table_data]);
 
   const PIE_COLORS = ["#14B8A6", "#6366F1", "#F59E0B", "#EC4899", "#10B981"];
+
+  const handleDownloadPdf = async () => {
+    if (!report?.id) return;
+    setIsDownloadingPdf(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/reports/${report.id}/export/pdf`);
+      if (!res.ok) {
+        const msg = await res.text();
+        throw new Error(msg || "PDF 다운로드 실패");
+      }
+      const blob = await res.blob();
+      const base = (report.file_name || "analysis_report").replace(/\.[^/.]+$/, "");
+      const fileName = `${base}_report_${report.id}.pdf`;
+      const url = window.URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = fileName;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "PDF 다운로드 중 오류가 발생했습니다.");
+    } finally {
+      setIsDownloadingPdf(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -148,9 +210,13 @@ export function InsightReport() {
           <Link to="/" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
             ← 대시보드로 돌아가기
           </Link>
-          <button className="flex items-center gap-2 px-4 py-2 bg-accent text-accent-foreground rounded-lg hover:bg-accent/90 transition-colors">
+          <button
+            onClick={() => { void handleDownloadPdf(); }}
+            disabled={isDownloadingPdf}
+            className="flex items-center gap-2 px-4 py-2 bg-accent text-accent-foreground rounded-lg hover:bg-accent/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
             <FileDown size={18} />
-            PDF로 내보내기
+            {isDownloadingPdf ? "PDF 생성 중..." : "PDF로 내보내기"}
           </button>
         </div>
       </header>
@@ -220,7 +286,9 @@ export function InsightReport() {
           <div>
             <h2 className="text-2xl font-bold text-foreground mb-2">1. 핵심 분석 결과</h2>
             <p className="text-muted-foreground">
-              추천 기법은 {report.recommended_method}이며, 업로드된 데이터에서 계산한 요약 통계를 기반으로 결과를 정리했습니다.
+              {chartMeta?.description
+                ? `추천 기법은 ${report.recommended_method}이며, ${chartMeta.description}`
+                : `추천 기법은 ${report.recommended_method}이며, 업로드된 데이터에서 계산한 요약 통계를 기반으로 결과를 정리했습니다.`}
             </p>
           </div>
 
@@ -238,7 +306,7 @@ export function InsightReport() {
                   }} 
                 />
                 <Legend />
-                <Bar dataKey="value" fill="#14B8A6" name="표준화 값(0-100)" radius={[8, 8, 0, 0]} />
+                <Bar dataKey={primaryDataKey} fill="#14B8A6" name={primaryLegend} radius={[8, 8, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -397,9 +465,9 @@ export function InsightReport() {
           </div>
 
           <div className="bg-background rounded-xl p-5">
-            <h3 className="text-lg font-semibold text-foreground mb-3">원본 평균 추세</h3>
+            <h3 className="text-lg font-semibold text-foreground mb-3">{chartMeta?.secondary_title || "원본 평균 추세"}</h3>
             <ResponsiveContainer width="100%" height={280}>
-              <LineChart data={rawMeanData.length > 0 ? rawMeanData : report.chart_data}>
+              <LineChart data={secondaryPlotData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
                 <XAxis dataKey="category" stroke="#64748B" />
                 <YAxis stroke="#64748B" />
@@ -411,7 +479,7 @@ export function InsightReport() {
                   }}
                 />
                 <Legend />
-                <Line type="monotone" dataKey="value" stroke="#14B8A6" strokeWidth={3} name={rawMeanData.length > 0 ? "원본 평균값" : "표준화 값"} />
+                <Line type="monotone" dataKey={secondaryDataKey} stroke="#14B8A6" strokeWidth={3} name={secondarySeriesName} />
               </LineChart>
             </ResponsiveContainer>
           </div>

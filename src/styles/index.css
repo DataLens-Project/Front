@@ -1,3 +1,22 @@
 @import './fonts.css';
 @import './tailwind.css';
 @import './theme.css';
+
+.datalens-grid .ag-root-wrapper {
+	border: 0;
+}
+
+.datalens-grid .ag-header {
+	position: sticky;
+	top: 0;
+	z-index: 2;
+}
+
+.datalens-grid .ag-row:hover .ag-cell {
+	background-color: color-mix(in srgb, var(--secondary) 70%, white 30%);
+}
+
+.datalens-grid .ag-cell.datalens-cell-updated {
+	background-color: color-mix(in srgb, var(--accent) 18%, white 82%);
+	font-weight: 600;
+}
